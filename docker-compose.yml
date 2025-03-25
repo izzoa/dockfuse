@@ -13,12 +13,40 @@ services:
       - S3_PATH=${S3_PATH:-/}
       - MOUNT_POINT=/mnt/s3bucket
       - S3_URL=${S3_URL:-https://s3.amazonaws.com}
-      - S3FS_OPTIONS=use_path_request_style,rw,allow_other,use_cache=/tmp,max_stat_cache_size=1000,stat_cache_expire=900,nonempty
+      # Enhanced S3 API support
+      - S3_API_VERSION=${S3_API_VERSION:-default}
+      - S3_REGION=${S3_REGION:-us-east-1}
+      # Request style configuration
+      - USE_PATH_STYLE=${USE_PATH_STYLE:-false}
+      - S3_REQUEST_STYLE=${S3_REQUEST_STYLE:-}
+      # Parallel operations
+      - PARALLEL_COUNT=${PARALLEL_COUNT:-5}
+      - MAX_THREAD_COUNT=${MAX_THREAD_COUNT:-5}
+      # Advanced caching mechanisms
+      - MAX_STAT_CACHE_SIZE=${MAX_STAT_CACHE_SIZE:-1000}
+      - STAT_CACHE_EXPIRE=${STAT_CACHE_EXPIRE:-900}
+      # Transfer optimizations
+      - MULTIPART_SIZE=${MULTIPART_SIZE:-10}
+      - MULTIPART_COPY_SIZE=${MULTIPART_COPY_SIZE:-512}
+      # Additional options
+      - ADDITIONAL_OPTIONS=${ADDITIONAL_OPTIONS:-}
+      # Legacy options
+      - S3FS_OPTIONS=${S3FS_OPTIONS:-rw,allow_other,nonempty}
+      # Health check options
+      - HEALTH_CHECK_TIMEOUT=${HEALTH_CHECK_TIMEOUT:-5}
+      - HEALTH_CHECK_WRITE_TEST=${HEALTH_CHECK_WRITE_TEST:-0}
+      # Debug
       - DEBUG=1
     volumes:
       - s3data:/mnt/s3bucket
     restart: unless-stopped
     command: daemon
+    healthcheck:
+      test: ["/usr/local/bin/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
 
 volumes:
   s3data:

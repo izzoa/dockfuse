@@ -1,0 +1,93 @@
+version: '3'
+
+services:
+  # Example for connecting to MinIO
+  dockfuse-minio:
+    build:
+      context: ../../src
+    container_name: dockfuse-minio
+    privileged: true
+    environment:
+      - AWS_ACCESS_KEY_ID=minioadmin
+      - AWS_SECRET_ACCESS_KEY=minioadmin
+      - S3_BUCKET=mybucket
+      - S3_URL=http://minio:9000
+      - USE_PATH_STYLE=true
+      - DEBUG=1
+    volumes:
+      - minio-data:/mnt/s3bucket
+    restart: unless-stopped
+    command: daemon
+    networks:
+      - minio-network
+
+  # Example for Digital Ocean Spaces
+  dockfuse-do-spaces:
+    build:
+      context: ../../src
+    container_name: dockfuse-do-spaces
+    privileged: true
+    environment:
+      - AWS_ACCESS_KEY_ID=${DO_SPACES_KEY}
+      - AWS_SECRET_ACCESS_KEY=${DO_SPACES_SECRET}
+      - S3_BUCKET=${DO_SPACES_BUCKET}
+      - S3_URL=https://${DO_SPACES_REGION}.digitaloceanspaces.com
+      - S3_REGION=${DO_SPACES_REGION}
+      - USE_PATH_STYLE=true
+      - DEBUG=1
+    volumes:
+      - do-spaces-data:/mnt/s3bucket
+    restart: unless-stopped
+    command: daemon
+
+  # Example for Google Cloud Storage
+  dockfuse-gcs:
+    build:
+      context: ../../src
+    container_name: dockfuse-gcs
+    privileged: true
+    environment:
+      - AWS_ACCESS_KEY_ID=${GCS_ACCESS_KEY}
+      - AWS_SECRET_ACCESS_KEY=${GCS_SECRET_KEY}
+      - S3_BUCKET=${GCS_BUCKET}
+      - S3_URL=https://storage.googleapis.com
+      - USE_PATH_STYLE=true
+      - S3_API_VERSION=2
+      - DEBUG=1
+    volumes:
+      - gcs-data:/mnt/s3bucket
+    restart: unless-stopped
+    command: daemon
+
+  # Example for Amazon S3 with specific API version and region
+  dockfuse-aws:
+    build:
+      context: ../../src
+    container_name: dockfuse-aws
+    privileged: true
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - S3_BUCKET=${S3_BUCKET}
+      - S3_REGION=us-west-2
+      - S3_API_VERSION=2
+      - USE_PATH_STYLE=false
+      - DEBUG=1
+    volumes:
+      - aws-data:/mnt/s3bucket
+    restart: unless-stopped
+    command: daemon
+
+volumes:
+  minio-data:
+    driver: local
+  do-spaces-data:
+    driver: local
+  gcs-data:
+    driver: local
+  aws-data:
+    driver: local
+
+networks:
+  minio-network:
+    external: true 

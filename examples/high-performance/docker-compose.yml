@@ -1,0 +1,44 @@
+version: '3'
+
+services:
+  dockfuse-high-performance:
+    build:
+      context: ../../src
+    container_name: dockfuse-high-performance
+    privileged: true
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - S3_BUCKET=${S3_BUCKET}
+      - S3_PATH=${S3_PATH:-/}
+      - MOUNT_POINT=/mnt/s3bucket
+      - S3_URL=${S3_URL:-https://s3.amazonaws.com}
+      - S3_REGION=${S3_REGION:-us-east-1}
+      
+      # High-performance parallel operations
+      - PARALLEL_COUNT=20
+      - MAX_THREAD_COUNT=20
+      
+      # Optimized caching for metadata
+      - MAX_STAT_CACHE_SIZE=10000
+      - STAT_CACHE_EXPIRE=1800
+      
+      # Transfer optimizations
+      - MULTIPART_SIZE=25
+      - MULTIPART_COPY_SIZE=1024
+      
+      # Additional performance options
+      - ADDITIONAL_OPTIONS=enable_noobj_cache,complement_stat,nodnscache,enable_content_md5
+      
+      # Path style requests if needed
+      - USE_PATH_STYLE=${USE_PATH_STYLE:-false}
+      
+      - DEBUG=1
+    volumes:
+      - s3data-high-perf:/mnt/s3bucket
+    restart: unless-stopped
+    command: daemon
+
+volumes:
+  s3data-high-perf:
+    driver: local 
