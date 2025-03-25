@@ -18,6 +18,7 @@ DockFuse is a Docker-based solution for mounting S3 buckets as local volumes usi
 - Advanced parallel operations
 - Enhanced metadata and content caching
 - Transfer optimizations
+- Multi-architecture support (AMD64 and ARM64)
 
 ## Quick Start
 

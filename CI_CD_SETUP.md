@@ -39,9 +39,23 @@ This guide explains how to set up the Continuous Integration and Continuous Depl
 The workflow file `.github/workflows/docker-build.yml` has already been created in your repository. This workflow:
 
 - Runs when you push to the main/master branch or add version tags
-- Builds your Docker image from the `src` directory
+- Builds your Docker image from the `src` directory for multiple architectures (AMD64 and ARM64)
 - Pushes the image to Docker Hub with appropriate tags
 - Updates the Docker Hub description from your `DOCKER_HUB_README.md` file
+
+### Multi-Architecture Support
+
+The workflow is configured to build Docker images for both ARM64 (Apple Silicon, Raspberry Pi) and AMD64 (x86-64) architectures. This means your image will work on:
+
+- Traditional Intel/AMD servers and desktops
+- Apple M1/M2 Macs
+- ARM-based servers and devices
+- Raspberry Pi and similar ARM devices
+
+The multi-architecture support is implemented using:
+- QEMU emulation for cross-platform builds
+- Docker Buildx for multi-platform image creation
+- Docker manifests to create a single, multi-architecture image
 
 ## Step 4: Triggering the Workflow
 

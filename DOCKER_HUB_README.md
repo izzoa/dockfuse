@@ -14,6 +14,7 @@ Docker container for mounting S3 buckets as local volumes using s3fs-fuse.
 - S3 API Version Support
 - Path-style vs Virtual-hosted style request configuration
 - Advanced parallel operations and transfer optimizations
+- **Multi-architecture support**: Works on both ARM64 (Apple Silicon, Raspberry Pi) and AMD64 (x86-64) systems
 
 ## Quick Start
 
