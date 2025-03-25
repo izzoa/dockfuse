@@ -49,8 +49,8 @@ if [ "$S3_API_VERSION" != "default" ]; then
   S3FS_OPTS="$S3FS_OPTS,api_version=$S3_API_VERSION"
 fi
 
-# Add region if specified
-if [ -n "$S3_REGION" ]; then
+# Add region if specified and not using a custom S3 endpoint
+if [ -n "$S3_REGION" ] && [ "$S3_URL" = "https://s3.amazonaws.com" ]; then
   S3FS_OPTS="$S3FS_OPTS,region=$S3_REGION"
 fi
 
