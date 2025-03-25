@@ -1,0 +1,79 @@
+# Git
+.git
+.gitignore
+.github/
+
+# Docker
+.docker
+.dockerignore
+docker-compose*.yml
+Dockerfile*
+
+# Documentation
+README.md
+CHANGELOG.md
+CONTRIBUTING.md
+LICENSE
+docs/
+examples/
+*.md
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# Tests
+tests/
+test/
+__tests__/
+coverage/
+.nyc_output/
+
+# Build directories
+dist/
+build/
+out/
+
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# OS specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor directories and files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Temporary files
+tmp/
+temp/
+
+# CI/CD
+.gitlab-ci.yml
+.travis.yml
+.circleci/
+
+# Miscellaneous
+*.log
+*.sql
+*.sqlite
+.sass-cache/
+
+# S3fs specific
+passwd-s3fs
+.passwd-s3fs
