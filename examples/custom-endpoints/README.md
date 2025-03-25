@@ -13,6 +13,48 @@ This example includes configurations for:
 
 ## Setup Instructions
 
+You can either use the Docker Hub image (recommended) or build locally.
+
+### Using Docker Hub Image
+
+Create a docker-compose.yml file with the configurations you need:
+
+```yaml
+version: '3'
+
+services:
+  # Example for connecting to MinIO
+  dockfuse-minio:
+    image: amizzo/dockfuse:latest
+    container_name: dockfuse-minio
+    privileged: true
+    environment:
+      - AWS_ACCESS_KEY_ID=minioadmin
+      - AWS_SECRET_ACCESS_KEY=minioadmin
+      - S3_BUCKET=mybucket
+      - S3_URL=http://minio:9000
+      - USE_PATH_STYLE=true
+      - DEBUG=1
+    volumes:
+      - minio-data:/mnt/s3bucket
+    restart: unless-stopped
+    command: daemon
+    networks:
+      - minio-network
+
+volumes:
+  minio-data:
+    driver: local
+
+networks:
+  minio-network:
+    external: true
+```
+
+### Building Locally
+
+Follow the service-specific instructions below.
+
 ### MinIO
 
 1. Make sure you have a MinIO server running in a Docker network named `minio-network`.

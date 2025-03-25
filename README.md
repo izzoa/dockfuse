@@ -1,5 +1,8 @@
 # DockFuse
 
+[![Build and Push Docker Image](https://github.com/amizzo/dockfuse/actions/workflows/docker-build.yml/badge.svg)](https://github.com/amizzo/dockfuse/actions/workflows/docker-build.yml)
+[![Docker Hub](https://img.shields.io/docker/pulls/amizzo/dockfuse.svg)](https://hub.docker.com/r/amizzo/dockfuse)
+
 DockFuse is a Docker-based solution for mounting S3 buckets as local volumes using s3fs-fuse.
 
 ## Features
@@ -26,9 +29,45 @@ DockFuse is a Docker-based solution for mounting S3 buckets as local volumes usi
 
 ### Basic Usage
 
+#### Option 1: Using Docker Hub Image
+
+1. Create a `.env` file with your credentials:
+   ```bash
+   AWS_ACCESS_KEY_ID=your_access_key
+   AWS_SECRET_ACCESS_KEY=your_secret_key
+   S3_BUCKET=your_bucket_name
+   ```
+
+2. Create a docker-compose.yml file:
+   ```yaml
+   version: '3'
+   
+   services:
+     dockfuse:
+       image: amizzo/dockfuse:latest
+       container_name: dockfuse
+       privileged: true
+       env_file: .env
+       volumes:
+         - s3data:/mnt/s3bucket
+       restart: unless-stopped
+       command: daemon
+
+   volumes:
+     s3data:
+       driver: local
+   ```
+
+3. Start the container:
+   ```bash
+   docker-compose up -d
+   ```
+
+#### Option 2: Building Locally
+
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/dockfuse.git
+   git clone https://github.com/amizzo/dockfuse.git
    cd dockfuse
    ```
 
@@ -45,6 +84,35 @@ DockFuse is a Docker-based solution for mounting S3 buckets as local volumes usi
    ```
 
 4. Your S3 bucket is now mounted at `/mnt/s3bucket` in the container and available through the `s3data` Docker volume.
+
+## Docker Hub
+
+The DockFuse image is available on Docker Hub and can be pulled with:
+
+```bash
+docker pull amizzo/dockfuse:latest
+```
+
+### Using with docker run
+
+```bash
+docker run -d --name dockfuse \
+  --privileged \
+  -e AWS_ACCESS_KEY_ID=your_access_key \
+  -e AWS_SECRET_ACCESS_KEY=your_secret_key \
+  -e S3_BUCKET=your_bucket_name \
+  amizzo/dockfuse:latest
+```
+
+## Continuous Integration / Continuous Deployment
+
+This project uses GitHub Actions for CI/CD. The workflow automatically:
+
+1. Builds the Docker image when code is pushed to the main branch or when a new tag is created
+2. Pushes the image to Docker Hub with appropriate tags
+3. Updates the Docker Hub description from the DOCKER_HUB_README.md file
+
+For details on setting up the CI/CD pipeline for your fork, see [CI_CD_SETUP.md](CI_CD_SETUP.md).
 
 ## Configuration Options
 
@@ -162,6 +230,38 @@ To include a write test in the health check (more comprehensive but more intensi
 ```yaml
 environment:
   - HEALTH_CHECK_WRITE_TEST=1
+```
+
+### Testing the Container
+
+There are two ways to test if the container works correctly:
+
+#### 1. Using TEST_MODE
+
+For simple testing of the container without actually mounting an S3 bucket:
+
+```bash
+docker run --rm -e TEST_MODE=1 amizzo/dockfuse:latest echo "Container works!"
+```
+
+#### 2. Overriding the Entrypoint
+
+You can also test by completely bypassing the entrypoint script:
+
+```bash
+docker run --rm --entrypoint="" amizzo/dockfuse:latest echo "Container works!"
+```
+
+#### 3. Full Functionality Test
+
+To test the container with actual S3 mounting:
+
+```bash
+docker run --rm \
+  -e AWS_ACCESS_KEY_ID=your_access_key \
+  -e AWS_SECRET_ACCESS_KEY=your_secret_key \
+  -e S3_BUCKET=your_bucket_name \
+  amizzo/dockfuse:latest echo "Container with S3 mount works!"
 ```
 
 ### Common Issues

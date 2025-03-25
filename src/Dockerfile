@@ -18,7 +18,6 @@ RUN apt-get update && apt-get install -y \
     make \
     pkg-config \
     wget \
-    timeout \
     && rm -rf /var/lib/apt/lists/*
 
 # Clone and install latest s3fs

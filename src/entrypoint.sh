@@ -1,6 +1,15 @@
 #!/bin/bash
 set -e
 
+# TEST_MODE allows running the container without S3 mounting
+# When TEST_MODE=1, this script will skip S3 mounting and just execute the command
+# Example: docker run -e TEST_MODE=1 amizzo/dockfuse echo "Test"
+if [ "$TEST_MODE" = "1" ]; then
+  echo "Running in TEST_MODE - S3 mounting skipped"
+  exec "$@"
+  exit 0
+fi
+
 # Create AWS credentials directory and file
 mkdir -p /root/.aws
 echo "[default]" > /root/.aws/credentials
@@ -20,6 +29,17 @@ MULTIPART_SIZE=${MULTIPART_SIZE:-"10"}
 MULTIPART_COPY_SIZE=${MULTIPART_COPY_SIZE:-"512"}
 MAX_THREAD_COUNT=${MAX_THREAD_COUNT:-"5"}
 ADDITIONAL_OPTIONS=${ADDITIONAL_OPTIONS:-""}
+S3_URL=${S3_URL:-"https://s3.amazonaws.com"}
+
+# Check for required variables
+if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ -z "$S3_BUCKET" ]; then
+  echo "ERROR: Required environment variables not set."
+  echo "Please provide:"
+  echo "  - AWS_ACCESS_KEY_ID"
+  echo "  - AWS_SECRET_ACCESS_KEY"
+  echo "  - S3_BUCKET"
+  exit 1
+fi
 
 # Build s3fs options
 S3FS_OPTS="profile=default"
