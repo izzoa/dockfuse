@@ -99,8 +99,14 @@ if [ "$DEBUG" = "1" ]; then
   echo "Multipart Copy Size: $MULTIPART_COPY_SIZE MB"
   echo "Additional Options: $ADDITIONAL_OPTIONS"
   echo "S3FS Options: $S3FS_OPTS"
-  echo "AWS credentials file content:"
-  cat /root/.aws/credentials
+  echo "AWS credentials file:"
+  # Print only first 4 chars of access key followed by asterisks
+  ACCESS_KEY_MASKED=${AWS_ACCESS_KEY_ID:0:4}$(printf '%*s' $((${#AWS_ACCESS_KEY_ID} - 4)) | tr ' ' '*')
+  # Print only first 4 chars of secret key followed by asterisks
+  SECRET_KEY_MASKED=${AWS_SECRET_ACCESS_KEY:0:4}$(printf '%*s' $((${#AWS_SECRET_ACCESS_KEY} - 4)) | tr ' ' '*')
+  echo "[default]"
+  echo "aws_access_key_id = $ACCESS_KEY_MASKED"
+  echo "aws_secret_access_key = $SECRET_KEY_MASKED"
 fi
 
 # Mount the S3 bucket
