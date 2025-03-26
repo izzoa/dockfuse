@@ -4,11 +4,22 @@ LABEL maintainer="Anthony Izzo <izzo.anthony@gmail.com>"
 LABEL description="DockFuse - Docker container for mounting S3 buckets using s3fs-fuse"
 LABEL version="1.1.0"
 
-# Install tini for proper init and signal handling
-ENV TINI_VERSION v0.19.0
-ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /tini
-RUN chmod +x /tini
-ENTRYPOINT ["/tini", "--"]
+# Install s6 for proper init and signal handling
+RUN apt-get update && apt-get install -y \
+    xz-utils \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install s6 overlay
+ENV S6_OVERLAY_VERSION=3.1.6.2
+ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz /tmp
+ADD https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-x86_64.tar.xz /tmp
+RUN tar -C / -Jxpf /tmp/s6-overlay-noarch.tar.xz \
+    && tar -C / -Jxpf /tmp/s6-overlay-x86_64.tar.xz \
+    && rm /tmp/s6-overlay-noarch.tar.xz /tmp/s6-overlay-x86_64.tar.xz
+
+# Set s6 init as entrypoint
+ENTRYPOINT ["/init"]
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \
@@ -58,12 +69,25 @@ COPY healthcheck.sh /usr/local/bin/healthcheck.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/healthcheck.sh && \
     chown s3fs:s3fs /usr/local/bin/entrypoint.sh /usr/local/bin/healthcheck.sh
 
+# Set up s6 service directories
+RUN mkdir -p /etc/s6-overlay/s6-rc.d/s3fs \
+    && mkdir -p /etc/s6-overlay/s6-rc.d/user/contents.d \
+    && touch /etc/s6-overlay/s6-rc.d/user/contents.d/s3fs \
+    && mkdir -p /etc/s6-overlay/s6-rc.d/s3fs/dependencies.d
+
+# Copy s6 service files
+COPY s6-service/run /etc/s6-overlay/s6-rc.d/s3fs/run
+COPY s6-service/finish /etc/s6-overlay/s6-rc.d/s3fs/finish
+RUN chmod +x /etc/s6-overlay/s6-rc.d/s3fs/run /etc/s6-overlay/s6-rc.d/s3fs/finish
+
 # Set environment variables
 ENV MOUNT_POINT=/mnt/s3bucket \
     DEBUG=0 \
     S3_PATH=/ \
     HEALTH_CHECK_TIMEOUT=5 \
-    HEALTH_CHECK_WRITE_TEST=0
+    HEALTH_CHECK_WRITE_TEST=0 \
+    S6_KEEP_ENV=1 \
+    S6_BEHAVIOUR_IF_STAGE2_FAILS=2
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
@@ -72,5 +96,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # Switch to non-root user
 USER s3fs
 
-# Use tini as init and then our entrypoint
-CMD ["/tini", "--", "/usr/local/bin/entrypoint.sh", "daemon"]
+# Use s6 and our entrypoint script
+CMD ["/usr/local/bin/entrypoint.sh", "daemon"]

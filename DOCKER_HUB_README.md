@@ -8,7 +8,7 @@ Docker container for mounting S3 buckets as local volumes using s3fs-fuse.
 
 - Mount any S3-compatible storage as a local volume
 - Support for custom endpoints (AWS, MinIO, DigitalOcean Spaces, etc.)
-- Multiple bucket mounting
+- Multiple bucket mounting capabilities
 - Configurable caching and performance options
 - Health checking and monitoring
 - S3 API Version Support
@@ -17,25 +17,66 @@ Docker container for mounting S3 buckets as local volumes using s3fs-fuse.
 - **Multi-architecture support**: Works on both ARM64 (Apple Silicon, Raspberry Pi) and AMD64 (x86-64) systems
 - **Enhanced Security**: Non-root operation, proper signal handling, and secure credential management
 - **Improved Reliability**: Automatic mount retries and proper cleanup
+- **s6 process supervisor**: Robust process management and service monitoring
 
-## Quick Start
+## Quick Start with Docker Compose
 
-### Using docker-compose (recommended)
+### Step 1: Create mount directory and set permissions
 
-1. Create mount points with proper permissions:
 ```bash
 sudo mkdir -p s3data
 sudo chown 1000:1000 s3data  # Match container's s3fs user
 ```
 
-2. Create a `.env` file with your credentials:
+### Step 2: Create .env file with credentials
+
 ```bash
 AWS_ACCESS_KEY_ID=your_access_key
 AWS_SECRET_ACCESS_KEY=your_secret_key
 S3_BUCKET=your_bucket_name
 ```
 
-3. Create a docker-compose.yml file:
+### Step 3: Create docker-compose.yml
+
+```yaml
+version: '3'
+
+services:
+  dockfuse:
+    image: amizzo/dockfuse:latest
+    container_name: dockfuse
+    privileged: true  # Required for FUSE mounts
+    user: "1000:1000"  # Run as non-root user
+    env_file: .env
+    volumes:
+      - type: bind
+        source: ${PWD}/s3data
+        target: /mnt/s3bucket
+        bind:
+          propagation: rshared  # Critical for mount visibility
+    restart: unless-stopped
+```
+
+### Step 4: Launch the container
+
+```bash
+docker-compose up -d
+```
+
+### Step 5: Verify the mount
+
+```bash
+# Check S3 mount in container filesystem
+docker exec dockfuse df -h
+
+# List contents of S3 bucket
+docker exec dockfuse ls -la /mnt/s3bucket
+```
+
+## Recommended Production Configuration
+
+For production deployments, use this enhanced configuration:
+
 ```yaml
 version: '3'
 
@@ -44,59 +85,102 @@ services:
     image: amizzo/dockfuse:latest
     container_name: dockfuse
     privileged: true
-    user: "1000:1000"  # Run as non-root user
-    env_file: .env
+    user: "1000:1000"
+    environment:
+      - AWS_ACCESS_KEY_ID=your_access_key
+      - AWS_SECRET_ACCESS_KEY=your_secret_key
+      - S3_BUCKET=your_bucket_name
+      # Performance tuning
+      - PARALLEL_COUNT=10
+      - MAX_THREAD_COUNT=10
+      - MAX_STAT_CACHE_SIZE=2000
+      - STAT_CACHE_EXPIRE=1800
+      # Health check settings
+      - HEALTH_CHECK_TIMEOUT=10
+      - HEALTH_CHECK_WRITE_TEST=1
     volumes:
       - type: bind
-        source: ${PWD}/s3data
+        source: /mnt/persistent/s3data  # Use persistent storage location
+        target: /mnt/s3bucket
+        bind:
+          propagation: rshared
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+```
+
+## Multiple Bucket Configuration
+
+To mount multiple S3 buckets simultaneously:
+
+```yaml
+version: '3'
+
+services:
+  bucket1:
+    image: amizzo/dockfuse:latest
+    container_name: bucket1
+    privileged: true
+    user: "1000:1000"
+    environment:
+      - AWS_ACCESS_KEY_ID=your_access_key
+      - AWS_SECRET_ACCESS_KEY=your_secret_key
+      - S3_BUCKET=bucket1
+    volumes:
+      - type: bind
+        source: ./bucket1
         target: /mnt/s3bucket
         bind:
           propagation: rshared
     restart: unless-stopped
-    command: daemon
+
+  bucket2:
+    image: amizzo/dockfuse:latest
+    container_name: bucket2
+    privileged: true
+    user: "1000:1000"
+    environment:
+      - AWS_ACCESS_KEY_ID=your_access_key
+      - AWS_SECRET_ACCESS_KEY=your_secret_key
+      - S3_BUCKET=bucket2
+    volumes:
+      - type: bind
+        source: ./bucket2
+        target: /mnt/s3bucket
+        bind:
+          propagation: rshared
+    restart: unless-stopped
 ```
 
-4. Start the container:
-```bash
-docker-compose up -d
+## Critical Configuration Options
+
+### Mount Propagation (Important!)
+
+The `propagation` setting is essential for ensuring your S3 mount is properly visible:
+
+```yaml
+volumes:
+  - type: bind
+    source: ./s3data
+    target: /mnt/s3bucket
+    bind:
+      propagation: rshared  # Required for proper mount visibility
 ```
 
-### Using docker run
+### Persistent Mounts
 
-```bash
-# Create mount point
-sudo mkdir -p s3data
-sudo chown 1000:1000 s3data
+For mounts that persist across container restarts:
 
-# Run container
-docker run -d --name dockfuse \
-  --privileged \
-  --user 1000:1000 \
-  -e AWS_ACCESS_KEY_ID=your_access_key \
-  -e AWS_SECRET_ACCESS_KEY=your_secret_key \
-  -e S3_BUCKET=your_bucket_name \
-  -v ${PWD}/s3data:/mnt/s3bucket:rshared \
-  amizzo/dockfuse:latest
+```yaml
+environment:
+  # Your other environment variables...
+  - DISABLE_CLEANUP=1  # Don't unmount on container exit
+  - SKIP_CLEANUP=1     # Don't handle unmounting on signals
 ```
-
-## Security Features
-
-DockFuse includes several security enhancements:
-
-1. **Non-root Operation**
-   - Runs as a non-root user (UID 1000) by default
-   - All mount points and cache directories are properly permissioned
-   - AWS credentials are stored securely in the user's home directory
-
-2. **Process Management**
-   - Uses `tini` as init system for proper signal handling
-   - Automatic cleanup of mounts on container shutdown
-   - Proper handling of SIGTERM and other signals
-
-3. **Mount Reliability**
-   - Automatic retry logic for failed mounts
-   - Proper error handling and reporting
-   - Health checks to verify mount status
 
 ## Basic Configuration Options
 
@@ -109,69 +193,107 @@ DockFuse includes several security enhancements:
 - `USE_PATH_STYLE`: Use path-style requests (default: `false`)
 - `DEBUG`: Enable debug logging (default: `0`)
 
-## Testing the Container
+## Alternative S3-Compatible Storage
 
-To test the container without actually mounting an S3 bucket:
+### MinIO
 
-```bash
-docker run --rm -e TEST_MODE=1 amizzo/dockfuse:latest echo "Container works!"
+```yaml
+environment:
+  - AWS_ACCESS_KEY_ID=minioadmin
+  - AWS_SECRET_ACCESS_KEY=minioadmin
+  - S3_BUCKET=data
+  - S3_URL=http://minio:9000
+  - USE_PATH_STYLE=true
 ```
 
-Or by bypassing the entrypoint script:
+### DigitalOcean Spaces
 
-```bash
-docker run --rm --entrypoint="" amizzo/dockfuse:latest echo "Container works!"
+```yaml
+environment:
+  - AWS_ACCESS_KEY_ID=your_spaces_key
+  - AWS_SECRET_ACCESS_KEY=your_spaces_secret
+  - S3_BUCKET=your-space-name
+  - S3_URL=https://nyc3.digitaloceanspaces.com
+  - S3_REGION=nyc3
+  - USE_PATH_STYLE=true
 ```
 
 ## Health Check Configuration
 
-DockFuse includes built-in health checking to monitor the S3 mount status. Here's how to use it:
-
-### Health Check with Docker Compose
+DockFuse includes built-in health checking:
 
 ```yaml
-version: '3'
-
-services:
-  dockfuse:
-    image: amizzo/dockfuse:latest
-    container_name: dockfuse
-    privileged: true
-    environment:
-      - AWS_ACCESS_KEY_ID=your_access_key
-      - AWS_SECRET_ACCESS_KEY=your_secret_key
-      - S3_BUCKET=your_bucket_name
-      # Health check configuration
-      - HEALTH_CHECK_TIMEOUT=10        # Timeout in seconds (default: 5)
-      - HEALTH_CHECK_WRITE_TEST=1      # Enable write test (default: 0)
-    volumes:
-      - s3data:/mnt/s3bucket
-    healthcheck:
-      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
-      interval: 1m
-      timeout: 15s
-      retries: 3
-      start_period: 30s
-    restart: unless-stopped
-
-volumes:
-  s3data:
-    driver: local
+environment:
+  # Your other environment variables...
+  - HEALTH_CHECK_TIMEOUT=10        # Timeout in seconds (default: 5)
+  - HEALTH_CHECK_WRITE_TEST=1      # Enable write test (default: 0)
+healthcheck:
+  test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+  interval: 30s
+  timeout: 15s
+  retries: 3
+  start_period: 10s
 ```
 
-### Monitoring Health Status
+## Troubleshooting
 
-Check the health status of your container:
+### Debug Mode
+
+```yaml
+environment:
+  - DEBUG=1  # Enable verbose logging
+```
+
+### Common Issues
+
+1. **Permission denied errors:** Check that your host mount point has proper permissions:
+   ```bash
+   sudo chown 1000:1000 /path/to/mountpoint
+   ```
+
+2. **Mount not visible:** Ensure you're using the proper mount propagation setting:
+   ```yaml
+   volumes:
+     - type: bind
+       source: ./s3data
+       target: /mnt/s3bucket
+       bind:
+         propagation: rshared
+   ```
+
+3. **Mount disappears after restart:** Use the persistence settings:
+   ```yaml
+   environment:
+     - DISABLE_CLEANUP=1
+     - SKIP_CLEANUP=1
+   ```
+
+## Testing the Container
 
 ```bash
-docker inspect --format='{{.State.Health.Status}}' dockfuse
+# Run with test mode (no mount)
+docker run --rm -e TEST_MODE=1 amizzo/dockfuse:latest echo "Container works!"
+
+# Check container logs
+docker logs dockfuse
+
+# Check mount status
+docker exec dockfuse df -h
+docker exec dockfuse ls -la /mnt/s3bucket
 ```
 
-The health check verifies that:
-1. The S3 bucket is mounted correctly
-2. Directory contents can be listed
-3. (Optional) Files can be written and read when `HEALTH_CHECK_WRITE_TEST=1`
+## Command Overrides
 
-## Advanced Usage
+The container uses `/usr/local/bin/entrypoint.sh daemon` as its default command. To run a custom command instead:
 
-For advanced configuration options, example configurations, and more information, visit the [GitHub repository](https://github.com/izzoa/dockfuse). 
+```yaml
+# Execute a custom command after mounting
+command: ["ls", "-la", "/mnt/s3bucket"]
+
+# Run in test mode without mounting
+environment:
+  - TEST_MODE=1
+command: ["echo", "Container works!"]
+```
+
+For advanced configuration options and more information, visit the [GitHub repository](https://github.com/izzoa/dockfuse). 

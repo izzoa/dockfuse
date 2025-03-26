@@ -1,0 +1,47 @@
+#!/usr/bin/with-contenv sh
+
+# s6-overlay finish script for s3fs service
+# This script runs when the s3fs service stops
+
+# Get the exit code from the s3fs process
+EXIT_CODE=$1
+
+# Log termination with timestamp
+echo "[$(date)] s3fs service exited with status $EXIT_CODE"
+
+# Check environment variables for cleanup preferences
+if [ "${DISABLE_CLEANUP}" != "1" ] && [ "${SKIP_CLEANUP}" != "1" ]; then
+    # Attempt to unmount if it's still mounted
+    if mountpoint -q "$MOUNT_POINT"; then
+        echo "[$(date)] Unmounting $MOUNT_POINT..."
+        fusermount -u "$MOUNT_POINT" || true
+        UNMOUNT_STATUS=$?
+        if [ $UNMOUNT_STATUS -eq 0 ]; then
+            echo "[$(date)] Successfully unmounted $MOUNT_POINT"
+        else
+            echo "[$(date)] Failed to unmount $MOUNT_POINT (status $UNMOUNT_STATUS)"
+        fi
+    else
+        echo "[$(date)] Mount point $MOUNT_POINT is not mounted"
+    fi
+else
+    echo "[$(date)] Cleanup disabled by environment variables, keeping mount active"
+    # Even if cleanup is disabled, check if mount is still active
+    if ! mountpoint -q "$MOUNT_POINT"; then
+        echo "[$(date)] WARNING: Mount point $MOUNT_POINT is no longer mounted despite cleanup being disabled"
+    fi
+fi
+
+# In s6, the exit code from this script determines whether s6 will restart the service:
+# - 0: Service stopped normally, don't restart
+# - Other codes: Service failed, s6 behavior is determined by S6_BEHAVIOUR_IF_STAGE2_FAILS
+
+# If s3fs exited with 0, consider it a normal shutdown, otherwise treat as failure
+if [ "$EXIT_CODE" = "0" ]; then
+    echo "[$(date)] s3fs service terminated normally, not restarting"
+    exit 0
+else
+    echo "[$(date)] s3fs service terminated unexpectedly with code $EXIT_CODE"
+    # Return the original code for s6 to handle restart
+    exit "$EXIT_CODE"
+fi 

@@ -1,0 +1,66 @@
+#!/usr/bin/with-contenv sh
+
+# s6-overlay service script for s3fs
+# This script runs as a s6 service and manages the s3fs mount
+
+# Log start of service with timestamp
+echo "[$(date)] Starting s3fs service..."
+
+# All environment variables should be passed from entrypoint.sh through with-contenv
+# But we still set defaults as a safeguard
+: ${MOUNT_POINT:="/mnt/s3bucket"}
+: ${DEBUG:=0}
+: ${S3_PATH:="/"}
+: ${S3FS_OPTS:="use_cache=/tmp/s3fs_cache,allow_other"}
+: ${S3_URL:="https://s3.amazonaws.com"}
+
+# Verify bucket is set
+if [ -z "$S3_BUCKET" ]; then
+    echo "[$(date)] ERROR: S3_BUCKET environment variable not set"
+    exit 1
+fi
+
+# Additional debug mode settings
+if [ "$DEBUG" = "1" ]; then
+    if [[ "$S3FS_OPTS" != *"dbglevel=info"* ]]; then
+        S3FS_OPTS="${S3FS_OPTS},dbglevel=info"
+    fi
+    exec 2>&1
+    echo "[$(date)] Debug mode enabled"
+    echo "[$(date)] Mount options: ${S3FS_OPTS}"
+    echo "[$(date)] Mounting $S3_BUCKET:$S3_PATH to $MOUNT_POINT using URL $S3_URL"
+fi
+
+# Mount with retries
+MAX_RETRIES=3
+RETRY_COUNT=0
+
+echo "[$(date)] Mounting $S3_BUCKET:$S3_PATH to $MOUNT_POINT"
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    if s3fs "$S3_BUCKET:$S3_PATH" "$MOUNT_POINT" \
+        -f \
+        -o url="$S3_URL" \
+        -o "$S3FS_OPTS"; then
+        echo "[$(date)] Mount successful"
+        break
+    fi
+    
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+        echo "[$(date)] Mount failed, retrying in 5 seconds (attempt $RETRY_COUNT of $MAX_RETRIES)..."
+        sleep 5
+    fi
+done
+
+if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+    echo "[$(date)] Failed to mount after ${MAX_RETRIES} attempts"
+    exit 1
+fi
+
+# S6 expects the process to remain in foreground
+# -f flag should keep s3fs in foreground
+# This should not return unless s3fs exits
+echo "[$(date)] s3fs mount is now active and being monitored"
+
+# If s3fs exits unexpectedly, s6 will detect it and run the finish script 
