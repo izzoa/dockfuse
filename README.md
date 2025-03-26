@@ -174,6 +174,80 @@ Or specify the style explicitly:
 S3_REQUEST_STYLE=path
 ```
 
+## Troubleshooting S3FS Mounting Issues
+
+If you're experiencing issues with S3FS mounting in DockFuse, try the following troubleshooting steps:
+
+### Common Issues
+
+1. **Missing environment variables:**
+   - Ensure `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `S3_BUCKET` are correctly set.
+
+2. **Permissions issues:**
+   - Check that the AWS credentials have sufficient permissions to access the S3 bucket.
+   - Verify that the bucket exists and is accessible from your network.
+
+3. **FUSE/Docker issues:**
+   - Ensure the container is running with `privileged: true` in your docker-compose.yml.
+   - For macOS: Install and enable [macFUSE](https://osxfuse.github.io/).
+   - For Linux: Ensure FUSE is installed with `apt-get install fuse` or equivalent.
+
+4. **Endpoint/region configuration:**
+   - For non-AWS S3 providers, verify the correct endpoint URL is set in `S3_URL`.
+   - Set `USE_PATH_STYLE=true` for S3-compatible services that require path-style access.
+
+### Debugging Steps
+
+1. **Enable verbose output:**
+   ```yaml
+   environment:
+     - DEBUG=1
+     - S3FS_OPTIONS=rw,allow_other,nonempty,dbglevel=info
+   ```
+
+2. **Check container logs:**
+   ```bash
+   docker-compose logs dockfuse
+   ```
+
+3. **Test S3 connectivity:**
+   - Verify AWS CLI can access the bucket:
+   ```bash
+   docker run --rm -it \
+     -e AWS_ACCESS_KEY_ID=your_key \
+     -e AWS_SECRET_ACCESS_KEY=your_secret \
+     amazon/aws-cli:latest \
+     s3 ls s3://your-bucket
+   ```
+
+4. **Health check and testing:**
+   - The container includes a health check script at `/usr/local/bin/healthcheck.sh`
+   - Enable write testing by setting `HEALTH_CHECK_WRITE_TEST=1`
+
+### Debugging Scripts
+
+The repository includes two debugging scripts to help diagnose S3FS issues:
+
+1. **debug-s3fs.sh**: Interactive debugging that creates a test container and runs diagnostics
+2. **s3fs-debug.sh**: Quick check for common configuration issues and connection problems
+
+Run these scripts from the DockFuse project root:
+```bash
+./debug-s3fs.sh   # For interactive debugging
+./s3fs-debug.sh   # For quick configuration checks
+```
+
+### Additional S3FS Options
+
+If you're experiencing specific issues, try these additional S3FS options:
+
+- `use_sse`: For enabling server-side encryption
+- `ssl_verify_hostname=0`: If having certificate verification issues
+- `curldbg`: For detailed network debugging
+- `retries=N`: Increase retry count for unreliable connections
+
+Add these to your `S3FS_OPTIONS` or `ADDITIONAL_OPTIONS` environment variables.
+
 ## Examples
 
 ### MinIO Server
