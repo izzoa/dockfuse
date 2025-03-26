@@ -4,13 +4,19 @@ set -e
 # Function to cleanup on exit
 cleanup() {
     echo "Cleaning up..."
-    if mountpoint -q "${MOUNT_POINT}"; then
-        fusermount -u "${MOUNT_POINT}"
+    if [ "${DISABLE_CLEANUP}" != "1" ] && [ "${SKIP_CLEANUP}" != "1" ]; then
+        if mountpoint -q "${MOUNT_POINT}"; then
+            fusermount -u "${MOUNT_POINT}" || true
+        fi
+    else
+        echo "Cleanup disabled by environment variable, keeping mount active"
     fi
 }
 
-# Set up signal handling
-trap cleanup EXIT
+# Set up signal handling, only if cleanup is not disabled
+if [ "${DISABLE_CLEANUP}" != "1" ]; then
+    trap cleanup EXIT
+fi
 
 # TEST_MODE allows running the container without S3 mounting
 # When TEST_MODE=1, this script will skip S3 mounting and just execute the command
@@ -110,6 +116,8 @@ if [ "$DEBUG" = "1" ]; then
   echo "Multipart Copy Size: $MULTIPART_COPY_SIZE MB"
   echo "Additional Options: $ADDITIONAL_OPTIONS"
   echo "S3FS Options: $S3FS_OPTS"
+  echo "Disable Cleanup: ${DISABLE_CLEANUP:-0}"
+  echo "Skip Cleanup: ${SKIP_CLEANUP:-0}"
   echo "AWS credentials file:"
   # Print only first 4 chars of access key followed by asterisks
   ACCESS_KEY_MASKED=${AWS_ACCESS_KEY_ID:0:4}$(printf '%*s' $((${#AWS_ACCESS_KEY_ID} - 4)) | tr ' ' '*')
@@ -149,8 +157,15 @@ fi
 # Keep the container running
 if [ "$1" = "daemon" ]; then
     echo "Running in daemon mode..."
-    # Use wait instead of tail -f for better signal handling
-    wait
+    # Sleep infinity rather than wait, to avoid potential signal issues
+    if [ "${SKIP_CLEANUP}" = "1" ]; then
+        # This will keep the process running even if Docker tries to stop it
+        echo "SKIP_CLEANUP is enabled, using sleep infinity"
+        exec sleep infinity
+    else
+        # Default behavior - use wait for better signal handling
+        wait
+    fi
 else
     # Execute the provided command
     exec "$@"

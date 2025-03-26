@@ -143,6 +143,48 @@ DockFuse includes several security enhancements:
 - `MULTIPART_SIZE`: Size in MB for multipart uploads (default: `10`)
 - `MULTIPART_COPY_SIZE`: Size in MB for multipart copy (default: `512`)
 
+### Cleanup and Persistence
+- `DISABLE_CLEANUP`: Set to `1` to disable automatic cleanup on container exit
+- `SKIP_CLEANUP`: Set to `1` to skip filesystem unmounting when receiving signals
+- `TEST_MODE`: Set to `1` to skip S3 mounting and just execute the specified command
+
+### Command and Entrypoint
+
+The container uses [tini](https://github.com/krallin/tini) as its init system for proper signal handling.
+
+- **Default Entrypoint**: `/tini -- /usr/local/bin/entrypoint.sh`
+- **Default Command**: `daemon`
+
+Available commands:
+- `daemon`: Run in daemon mode (keeps the container running)
+- Any other command: Mounts the S3 bucket and executes the specified command
+
+Examples:
+
+```yaml
+# Run in daemon mode (default)
+command: daemon
+
+# Override default entrypoint and command
+entrypoint: ["/tini", "--", "/usr/local/bin/entrypoint.sh"]
+command: ["ls", "-la", "/mnt/s3bucket"]
+
+# Test the container without mounting
+environment:
+  - TEST_MODE=1
+command: ["echo", "Container works!"]
+```
+
+If you need to troubleshoot:
+
+```bash
+# Enter a running container to check mount status
+docker exec -it dockfuse /bin/bash
+
+# Manually run the mount command
+docker exec -it dockfuse s3fs your-bucket /mnt/s3bucket -o url=https://s3.amazonaws.com -o allow_other
+```
+
 ## Volume Sharing
 
 DockFuse supports several methods for sharing S3 mounts between containers:
@@ -151,13 +193,23 @@ DockFuse supports several methods for sharing S3 mounts between containers:
    ```yaml
    volumes:
      - type: bind
-       source: ./s3data
+       source: /path/to/mount
        target: /mnt/s3bucket
        bind:
          propagation: rshared
    ```
 
-2. **Named Volumes with Bind Driver**
+2. **Bind Mounts with Slave Propagation** (For read-only access)
+   ```yaml
+   volumes:
+     - type: bind
+       source: /path/to/mount
+       target: /data
+       bind:
+         propagation: rslave
+   ```
+
+3. **Named Volumes with Bind Driver**
    ```yaml
    volumes:
      s3data:
@@ -165,14 +217,37 @@ DockFuse supports several methods for sharing S3 mounts between containers:
        driver_opts:
          type: none
          o: bind
-         device: ${PWD}/s3data
+         device: /path/to/mount
    ```
 
-3. **Direct Container Sharing**
-   ```yaml
-   volumes_from:
-     - dockfuse:ro  # Read-only access
-   ```
+### Persistent Mount Example
+
+For stable mounts that persist even if the container restarts:
+
+```yaml
+services:
+  dockfuse:
+    image: amizzo/dockfuse:latest
+    privileged: true
+    user: root  # Required to create mount points
+    environment:
+      - AWS_ACCESS_KEY_ID=your_access_key
+      - AWS_SECRET_ACCESS_KEY=your_secret_key
+      - S3_BUCKET=your_bucket_name
+      - USE_PATH_STYLE=true
+      # Prevent automatic unmounting
+      - DISABLE_CLEANUP=1
+      - SKIP_CLEANUP=1
+    volumes:
+      - type: bind
+        source: /opt/s3mounts/data
+        target: /mnt/s3bucket
+        bind:
+          propagation: rshared
+    command: daemon
+```
+
+This configuration ensures the mount remains active even during container restarts or when receiving signals.
 
 ## Health Monitoring
 
