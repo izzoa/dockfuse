@@ -4,6 +4,12 @@ LABEL maintainer="Anthony Izzo <izzo.anthony@gmail.com>"
 LABEL description="DockFuse - Docker container for mounting S3 buckets using s3fs-fuse"
 LABEL version="1.1.0"
 
+# Install tini for proper init and signal handling
+ENV TINI_VERSION v0.19.0
+ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /tini
+RUN chmod +x /tini
+ENTRYPOINT ["/tini", "--"]
+
 # Install dependencies
 RUN apt-get update && apt-get install -y \
     automake \
@@ -31,18 +37,26 @@ RUN cd /tmp \
     && cd / \
     && rm -rf /tmp/s3fs-fuse
 
-# Create mount directory
-RUN mkdir -p /mnt/s3bucket
+# Create non-root user for s3fs
+RUN groupadd -g 1000 s3fs && \
+    useradd -u 1000 -g s3fs -m s3fs
+
+# Create mount directory with proper permissions
+RUN mkdir -p /mnt/s3bucket && \
+    chown s3fs:s3fs /mnt/s3bucket
+
+# Create cache directory with appropriate permissions
+RUN mkdir -p /tmp/s3fs_cache && \
+    chown s3fs:s3fs /tmp/s3fs_cache && \
+    chmod 777 /tmp/s3fs_cache
 
 # Copy scripts
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY healthcheck.sh /usr/local/bin/healthcheck.sh
 
-# Make scripts executable
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/healthcheck.sh
-
-# Create cache directory with appropriate permissions
-RUN mkdir -p /tmp/s3fs_cache && chmod 777 /tmp/s3fs_cache
+# Make scripts executable and set ownership
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/healthcheck.sh && \
+    chown s3fs:s3fs /usr/local/bin/entrypoint.sh /usr/local/bin/healthcheck.sh
 
 # Set environment variables
 ENV MOUNT_POINT=/mnt/s3bucket \
@@ -55,5 +69,8 @@ ENV MOUNT_POINT=/mnt/s3bucket \
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD ["/usr/local/bin/healthcheck.sh"]
 
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["daemon"]
+# Switch to non-root user
+USER s3fs
+
+# Use tini as init and then our entrypoint
+CMD ["/tini", "--", "/usr/local/bin/entrypoint.sh", "daemon"]

@@ -1,6 +1,17 @@
 #!/bin/bash
 set -e
 
+# Function to cleanup on exit
+cleanup() {
+    echo "Cleaning up..."
+    if mountpoint -q "${MOUNT_POINT}"; then
+        fusermount -u "${MOUNT_POINT}"
+    fi
+}
+
+# Set up signal handling
+trap cleanup EXIT
+
 # TEST_MODE allows running the container without S3 mounting
 # When TEST_MODE=1, this script will skip S3 mounting and just execute the command
 # Example: docker run -e TEST_MODE=1 amizzo/dockfuse echo "Test"
@@ -10,14 +21,14 @@ if [ "$TEST_MODE" = "1" ]; then
   exit 0
 fi
 
-# Create AWS credentials directory and file
-mkdir -p /root/.aws
-echo "[default]" > /root/.aws/credentials
-echo "aws_access_key_id = $AWS_ACCESS_KEY_ID" >> /root/.aws/credentials
-echo "aws_secret_access_key = $AWS_SECRET_ACCESS_KEY" >> /root/.aws/credentials
-chmod 600 /root/.aws/credentials
+# Create AWS credentials directory and file in user's home
+mkdir -p "${HOME}/.aws"
+echo "[default]" > "${HOME}/.aws/credentials"
+echo "aws_access_key_id = $AWS_ACCESS_KEY_ID" >> "${HOME}/.aws/credentials"
+echo "aws_secret_access_key = $AWS_SECRET_ACCESS_KEY" >> "${HOME}/.aws/credentials"
+chmod 600 "${HOME}/.aws/credentials"
 
-# Set defaults for new options if not provided
+# Set defaults for options
 S3_API_VERSION=${S3_API_VERSION:-"default"}
 S3_REGION=${S3_REGION:-"us-east-1"}
 USE_PATH_STYLE=${USE_PATH_STYLE:-"false"}
@@ -42,7 +53,7 @@ if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ -z "$S3_B
 fi
 
 # Build s3fs options
-S3FS_OPTS="profile=default"
+S3FS_OPTS="profile=default,allow_other"
 
 # Add API version if specified
 if [ "$S3_API_VERSION" != "default" ]; then
@@ -65,7 +76,7 @@ fi
 S3FS_OPTS="$S3FS_OPTS,parallel_count=$PARALLEL_COUNT,max_thread_count=$MAX_THREAD_COUNT"
 
 # Configure advanced caching
-S3FS_OPTS="$S3FS_OPTS,use_cache=/tmp,max_stat_cache_size=$MAX_STAT_CACHE_SIZE,stat_cache_expire=$STAT_CACHE_EXPIRE"
+S3FS_OPTS="$S3FS_OPTS,use_cache=/tmp/s3fs_cache,max_stat_cache_size=$MAX_STAT_CACHE_SIZE,stat_cache_expire=$STAT_CACHE_EXPIRE"
 
 # Configure transfer optimizations
 S3FS_OPTS="$S3FS_OPTS,multipart_size=${MULTIPART_SIZE},singlepart_copy_limit=${MULTIPART_COPY_SIZE}"
@@ -109,18 +120,38 @@ if [ "$DEBUG" = "1" ]; then
   echo "aws_secret_access_key = $SECRET_KEY_MASKED"
 fi
 
-# Mount the S3 bucket
+# Mount with retries
+MAX_RETRIES=3
+RETRY_COUNT=0
+
 echo "Mounting $S3_BUCKET:$S3_PATH to $MOUNT_POINT"
-s3fs "$S3_BUCKET:$S3_PATH" "$MOUNT_POINT" \
-  -o url="$S3_URL" \
-  -o $S3FS_OPTS
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    if s3fs "$S3_BUCKET:$S3_PATH" "$MOUNT_POINT" \
+        -o url="$S3_URL" \
+        -o "$S3FS_OPTS"; then
+        echo "Mount successful"
+        break
+    fi
+    
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+        echo "Mount failed, retrying in 5 seconds (attempt $RETRY_COUNT of $MAX_RETRIES)..."
+        sleep 5
+    fi
+done
+
+if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+    echo "Failed to mount after ${MAX_RETRIES} attempts"
+    exit 1
+fi
 
 # Keep the container running
 if [ "$1" = "daemon" ]; then
-  echo "Running in daemon mode..."
-  # Run in foreground to keep container alive
-  tail -f /dev/null
+    echo "Running in daemon mode..."
+    # Use wait instead of tail -f for better signal handling
+    wait
 else
-  # Execute the provided command
-  exec "$@"
+    # Execute the provided command
+    exec "$@"
 fi

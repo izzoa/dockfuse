@@ -4,20 +4,32 @@
 
 DockFuse is a Docker-based solution for mounting S3 buckets as local volumes using s3fs-fuse.
 
+## Table of Contents
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [Security Features](#security-features)
+- [Configuration](#configuration)
+- [Volume Sharing](#volume-sharing)
+- [Health Monitoring](#health-monitoring)
+- [Troubleshooting](#troubleshooting)
+- [Advanced Use Cases](#advanced-use-cases)
+- [CI/CD](#continuous-integration--continuous-deployment)
+- [License](#license)
+
 ## Features
 
 - Mount any S3-compatible storage as a local volume
 - Support for custom endpoints (AWS, MinIO, DigitalOcean Spaces, etc.)
 - Multiple bucket mounting
 - Configurable caching and performance options
-- Health checking
+- Health checking and monitoring
 - Comprehensive logging
 - S3 API Version Support
 - Path-style vs Virtual-hosted style request configuration
-- Advanced parallel operations
-- Enhanced metadata and content caching
-- Transfer optimizations
-- Multi-architecture support (AMD64 and ARM64)
+- Advanced parallel operations and transfer optimizations
+- **Multi-architecture support** (AMD64 and ARM64)
+- **Enhanced Security**: Non-root operation, proper signal handling, and secure credential management
+- **Improved Reliability**: Automatic mount retries and proper cleanup
 
 ## Quick Start
 
@@ -31,44 +43,10 @@ DockFuse is a Docker-based solution for mounting S3 buckets as local volumes usi
 
 #### Option 1: Using Docker Hub Image
 
-1. Create a `.env` file with your credentials:
+1. Create mount points with proper permissions:
    ```bash
-   AWS_ACCESS_KEY_ID=your_access_key
-   AWS_SECRET_ACCESS_KEY=your_secret_key
-   S3_BUCKET=your_bucket_name
-   ```
-
-2. Create a docker-compose.yml file:
-   ```yaml
-   version: '3'
-   
-   services:
-     dockfuse:
-       image: amizzo/dockfuse:latest
-       container_name: dockfuse
-       privileged: true
-       env_file: .env
-       volumes:
-         - s3data:/mnt/s3bucket
-       restart: unless-stopped
-       command: daemon
-
-   volumes:
-     s3data:
-       driver: local
-   ```
-
-3. Start the container:
-   ```bash
-   docker-compose up -d
-   ```
-
-#### Option 2: Building Locally
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/amizzo/dockfuse.git
-   cd dockfuse
+   sudo mkdir -p s3data
+   sudo chown 1000:1000 s3data  # Match container's s3fs user
    ```
 
 2. Create a `.env` file with your credentials:
@@ -78,47 +56,72 @@ DockFuse is a Docker-based solution for mounting S3 buckets as local volumes usi
    S3_BUCKET=your_bucket_name
    ```
 
-3. Start the container:
+3. Create a docker-compose.yml file:
+   ```yaml
+   version: '3'
+   
+   services:
+     dockfuse:
+       image: amizzo/dockfuse:latest
+       container_name: dockfuse
+       privileged: true
+       user: "1000:1000"  # Run as non-root user
+       env_file: .env
+       volumes:
+         - type: bind
+           source: ${PWD}/s3data
+           target: /mnt/s3bucket
+           bind:
+             propagation: rshared
+       restart: unless-stopped
+       command: daemon
+   ```
+
+4. Start the container:
    ```bash
    docker-compose up -d
    ```
 
-4. Your S3 bucket is now mounted at `/mnt/s3bucket` in the container and available through the `s3data` Docker volume.
-
-## Docker Hub
-
-The DockFuse image is available on Docker Hub and can be pulled with:
+#### Option 2: Using docker run
 
 ```bash
-docker pull amizzo/dockfuse:latest
-```
+# Create mount point
+sudo mkdir -p s3data
+sudo chown 1000:1000 s3data
 
-### Using with docker run
-
-```bash
+# Run container
 docker run -d --name dockfuse \
   --privileged \
+  --user 1000:1000 \
   -e AWS_ACCESS_KEY_ID=your_access_key \
   -e AWS_SECRET_ACCESS_KEY=your_secret_key \
   -e S3_BUCKET=your_bucket_name \
+  -v ${PWD}/s3data:/mnt/s3bucket:rshared \
   amizzo/dockfuse:latest
 ```
 
-## Continuous Integration / Continuous Deployment
+## Security Features
 
-This project uses GitHub Actions for CI/CD. The workflow automatically:
+DockFuse includes several security enhancements:
 
-1. Builds the Docker image when code is pushed to the main branch or when a new tag is created
-2. Pushes the image to Docker Hub with appropriate tags
-3. Updates the Docker Hub description from the DOCKER_HUB_README.md file
+1. **Non-root Operation**
+   - Runs as a non-root user (UID 1000) by default
+   - All mount points and cache directories are properly permissioned
+   - AWS credentials are stored securely in the user's home directory
 
-For details on setting up the CI/CD pipeline for your fork, see [CI_CD_SETUP.md](CI_CD_SETUP.md).
+2. **Process Management**
+   - Uses `tini` as init system for proper signal handling
+   - Automatic cleanup of mounts on container shutdown
+   - Proper handling of SIGTERM and other signals
 
-## Configuration Options
+3. **Mount Reliability**
+   - Automatic retry logic for failed mounts
+   - Proper error handling and reporting
+   - Health checks to verify mount status
 
-DockFuse provides a wide range of configuration options through environment variables:
+## Configuration
 
-### Basic Configuration
+### Basic Options
 - `AWS_ACCESS_KEY_ID`: Your AWS access key (required)
 - `AWS_SECRET_ACCESS_KEY`: Your AWS secret key (required)
 - `S3_BUCKET`: The S3 bucket to mount (required)
@@ -129,128 +132,122 @@ DockFuse provides a wide range of configuration options through environment vari
 ### S3 API and Compatibility
 - `S3_API_VERSION`: S3 API version to use (default: `default`)
 - `S3_REGION`: S3 region to connect to (default: `us-east-1`)
+- `USE_PATH_STYLE`: Use path-style requests (default: `false`)
+- `S3_REQUEST_STYLE`: Explicit request style setting (`path` or `virtual`)
 
-### Request Style
-- `USE_PATH_STYLE`: Use path-style requests instead of virtual-hosted style (default: `false`)
-- `S3_REQUEST_STYLE`: Explicit request style setting, either `path` or `virtual`
-
-### Parallel Operations
+### Performance Tuning
 - `PARALLEL_COUNT`: Number of parallel operations (default: `5`)
-- `MAX_THREAD_COUNT`: Maximum number of threads for S3 operations (default: `5`)
-
-### Caching
-- `MAX_STAT_CACHE_SIZE`: Maximum number of entries in the stat cache (default: `1000`)
-- `STAT_CACHE_EXPIRE`: Expiration time for stat cache entries in seconds (default: `900`)
-
-### Transfer Optimizations
+- `MAX_THREAD_COUNT`: Maximum number of threads (default: `5`)
+- `MAX_STAT_CACHE_SIZE`: Maximum stat cache entries (default: `1000`)
+- `STAT_CACHE_EXPIRE`: Stat cache expiration in seconds (default: `900`)
 - `MULTIPART_SIZE`: Size in MB for multipart uploads (default: `10`)
-- `MULTIPART_COPY_SIZE`: Size in MB for multipart copy limit (default: `512`)
+- `MULTIPART_COPY_SIZE`: Size in MB for multipart copy (default: `512`)
 
-### Health Check Options
-- `HEALTH_CHECK_TIMEOUT`: Timeout in seconds for health check operations (default: `5`)
-- `HEALTH_CHECK_WRITE_TEST`: Enable write test in health check when set to `1` (default: `0`)
+## Volume Sharing
 
-### Additional Options
-- `ADDITIONAL_OPTIONS`: Additional s3fs options as a comma-separated string
-- `S3FS_OPTIONS`: Legacy s3fs options (default: `rw,allow_other,nonempty`)
-- `DEBUG`: Enable debug logging when set to `1`
+DockFuse supports several methods for sharing S3 mounts between containers:
 
-## Path-style vs Virtual-hosted Style
+1. **Mount Propagation** (Recommended)
+   ```yaml
+   volumes:
+     - type: bind
+       source: ./s3data
+       target: /mnt/s3bucket
+       bind:
+         propagation: rshared
+   ```
 
-Amazon S3 supports two request styles:
+2. **Named Volumes with Bind Driver**
+   ```yaml
+   volumes:
+     s3data:
+       driver: local
+       driver_opts:
+         type: none
+         o: bind
+         device: ${PWD}/s3data
+   ```
 
-1. **Virtual-hosted style** (default): `https://bucket-name.s3.amazonaws.com/key-name`
-2. **Path-style**: `https://s3.amazonaws.com/bucket-name/key-name`
+3. **Direct Container Sharing**
+   ```yaml
+   volumes_from:
+     - dockfuse:ro  # Read-only access
+   ```
 
-Path-style is required for buckets with periods in their names and for some S3-compatible services.
+## Health Monitoring
 
-To use path-style, set:
+### Health Check Configuration
+
+```yaml
+services:
+  dockfuse:
+    # ... other config ...
+    environment:
+      - HEALTH_CHECK_TIMEOUT=10        # Timeout in seconds
+      - HEALTH_CHECK_WRITE_TEST=1      # Enable write testing
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      interval: 1m
+      timeout: 15s
+      retries: 3
+      start_period: 30s
 ```
-USE_PATH_STYLE=true
+
+### Monitoring Status
+
+```bash
+docker inspect --format='{{.State.Health.Status}}' dockfuse
 ```
 
-Or specify the style explicitly:
-```
-S3_REQUEST_STYLE=path
-```
+## Troubleshooting
 
-## Troubleshooting S3FS Mounting Issues
+### Debug Mode
 
-If you're experiencing issues with S3FS mounting in DockFuse, try the following troubleshooting steps:
+Enable verbose logging:
+```yaml
+environment:
+  - DEBUG=1
+```
 
 ### Common Issues
 
 1. **Missing environment variables:**
-   - Ensure `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `S3_BUCKET` are correctly set.
+   - Verify `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `S3_BUCKET`
 
 2. **Permissions issues:**
-   - Check that the AWS credentials have sufficient permissions to access the S3 bucket.
-   - Verify that the bucket exists and is accessible from your network.
+   - Check AWS credentials permissions
+   - Verify bucket accessibility
+   - Ensure proper mount point permissions
 
 3. **FUSE/Docker issues:**
-   - Ensure the container is running with `privileged: true` in your docker-compose.yml.
-   - For macOS: Install and enable [macFUSE](https://osxfuse.github.io/).
-   - For Linux: Ensure FUSE is installed with `apt-get install fuse` or equivalent.
+   - Verify `privileged: true` setting
+   - Install FUSE dependencies if needed
+   - Check mount propagation settings
 
-4. **Endpoint/region configuration:**
-   - For non-AWS S3 providers, verify the correct endpoint URL is set in `S3_URL`.
-   - Set `USE_PATH_STYLE=true` for S3-compatible services that require path-style access.
+### Testing
 
-### Debugging Steps
-
-1. **Enable verbose output:**
-   ```yaml
-   environment:
-     - DEBUG=1
-     - S3FS_OPTIONS=rw,allow_other,nonempty,dbglevel=info
-   ```
-
-2. **Check container logs:**
+1. **Simple container test:**
    ```bash
-   docker-compose logs dockfuse
+   docker run --rm -e TEST_MODE=1 amizzo/dockfuse:latest echo "Container works!"
    ```
 
-3. **Test S3 connectivity:**
-   - Verify AWS CLI can access the bucket:
+2. **Bypass entrypoint test:**
    ```bash
-   docker run --rm -it \
-     -e AWS_ACCESS_KEY_ID=your_key \
-     -e AWS_SECRET_ACCESS_KEY=your_secret \
-     amazon/aws-cli:latest \
-     s3 ls s3://your-bucket
+   docker run --rm --entrypoint="" amizzo/dockfuse:latest echo "Container works!"
    ```
 
-4. **Health check and testing:**
-   - The container includes a health check script at `/usr/local/bin/healthcheck.sh`
-   - Enable write testing by setting `HEALTH_CHECK_WRITE_TEST=1`
+3. **Mount test:**
+   ```bash
+   docker run --rm \
+     -e AWS_ACCESS_KEY_ID=your_access_key \
+     -e AWS_SECRET_ACCESS_KEY=your_secret_key \
+     -e S3_BUCKET=your_bucket_name \
+     amizzo/dockfuse:latest echo "Container with S3 mount works!"
+   ```
 
-### Debugging Scripts
+## Advanced Use Cases
 
-The repository includes two debugging scripts to help diagnose S3FS issues:
-
-1. **debug-s3fs.sh**: Interactive debugging that creates a test container and runs diagnostics
-2. **s3fs-debug.sh**: Quick check for common configuration issues and connection problems
-
-Run these scripts from the DockFuse project root:
-```bash
-./debug-s3fs.sh   # For interactive debugging
-./s3fs-debug.sh   # For quick configuration checks
-```
-
-### Additional S3FS Options
-
-If you're experiencing specific issues, try these additional S3FS options:
-
-- `use_sse`: For enabling server-side encryption
-- `ssl_verify_hostname=0`: If having certificate verification issues
-- `curldbg`: For detailed network debugging
-- `retries=N`: Increase retry count for unreliable connections
-
-Add these to your `S3FS_OPTIONS` or `ADDITIONAL_OPTIONS` environment variables.
-
-## Examples
-
-### MinIO Server
+### MinIO Configuration
 
 ```yaml
 environment:
@@ -261,13 +258,10 @@ environment:
   - USE_PATH_STYLE=true
 ```
 
-### Amazon S3 with Performance Tuning
+### High Performance Configuration
 
 ```yaml
 environment:
-  - AWS_ACCESS_KEY_ID=your_access_key
-  - AWS_SECRET_ACCESS_KEY=your_secret_key
-  - S3_BUCKET=your_bucket
   - S3_REGION=us-west-2
   - PARALLEL_COUNT=10
   - MAX_THREAD_COUNT=10
@@ -276,122 +270,15 @@ environment:
   - MULTIPART_SIZE=20
 ```
 
-## Advanced Use Cases
+## Continuous Integration / Continuous Deployment
 
-See the `examples` directory for more configuration examples.
+This project uses GitHub Actions for CI/CD:
 
-## Troubleshooting
+1. Builds multi-architecture Docker images (AMD64, ARM64)
+2. Pushes images to Docker Hub with appropriate tags
+3. Updates Docker Hub description
 
-### Debug Mode
-
-Set the `DEBUG` environment variable to `1` to enable verbose logging:
-
-```yaml
-environment:
-  - DEBUG=1
-```
-
-### Health Check
-
-You can monitor the health of your container with:
-
-```bash
-docker inspect --format='{{.State.Health.Status}}' dockfuse
-```
-
-To include a write test in the health check (more comprehensive but more intensive):
-
-```yaml
-environment:
-  - HEALTH_CHECK_WRITE_TEST=1
-```
-
-#### Health Check in docker-compose.yml
-
-Here's a more complete example of configuring health checks in your docker-compose.yml:
-
-```yaml
-version: '3'
-
-services:
-  dockfuse:
-    image: amizzo/dockfuse:latest
-    container_name: dockfuse
-    privileged: true
-    environment:
-      - AWS_ACCESS_KEY_ID=your_access_key
-      - AWS_SECRET_ACCESS_KEY=your_secret_key
-      - S3_BUCKET=your_bucket_name
-      # Health check configuration
-      - HEALTH_CHECK_TIMEOUT=10             # Increase timeout to 10 seconds
-      - HEALTH_CHECK_WRITE_TEST=1           # Enable write testing
-    volumes:
-      - s3data:/mnt/s3bucket
-    healthcheck:
-      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
-      interval: 1m                          # Check every minute
-      timeout: 15s                          # Allow 15 seconds for the check
-      retries: 3                            # Retry 3 times before marking unhealthy
-      start_period: 30s                     # Give 30s for container to start
-    restart: unless-stopped
-    command: daemon
-  
-  # Example of a service that depends on the S3 mount being healthy
-  dependent-service:
-    image: your-application-image
-    depends_on:
-      dockfuse:
-        condition: service_healthy          # Wait for healthy status before starting
-    volumes:
-      - s3data:/data:ro                     # Mount the same volume as read-only
-    # Additional configuration...
-
-volumes:
-  s3data:
-    driver: local
-```
-
-This configuration:
-1. Configures container-level health check parameters
-2. Increases the timeout for health checks to accommodate slower S3 connections
-3. Enables write testing for more comprehensive checks
-4. Ensures dependent services only start after the S3 mount is confirmed working
-
-### Testing the Container
-
-There are two ways to test if the container works correctly:
-
-#### 1. Using TEST_MODE
-
-For simple testing of the container without actually mounting an S3 bucket:
-
-```bash
-docker run --rm -e TEST_MODE=1 amizzo/dockfuse:latest echo "Container works!"
-```
-
-#### 2. Overriding the Entrypoint
-
-You can also test by completely bypassing the entrypoint script:
-
-```bash
-docker run --rm --entrypoint="" amizzo/dockfuse:latest echo "Container works!"
-```
-
-#### 3. Full Functionality Test
-
-To test the container with actual S3 mounting:
-
-```bash
-docker run --rm \
-  -e AWS_ACCESS_KEY_ID=your_access_key \
-  -e AWS_SECRET_ACCESS_KEY=your_secret_key \
-  -e S3_BUCKET=your_bucket_name \
-  amizzo/dockfuse:latest echo "Container with S3 mount works!"
-```
-
-### Common Issues
-
-If you encounter permission issues, ensure your S3 bucket policy allows the required operations.
+For CI/CD setup details, see [CI_CD_SETUP.md](CI_CD_SETUP.md).
 
 ## License
 

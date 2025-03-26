@@ -15,19 +15,27 @@ Docker container for mounting S3 buckets as local volumes using s3fs-fuse.
 - Path-style vs Virtual-hosted style request configuration
 - Advanced parallel operations and transfer optimizations
 - **Multi-architecture support**: Works on both ARM64 (Apple Silicon, Raspberry Pi) and AMD64 (x86-64) systems
+- **Enhanced Security**: Non-root operation, proper signal handling, and secure credential management
+- **Improved Reliability**: Automatic mount retries and proper cleanup
 
 ## Quick Start
 
 ### Using docker-compose (recommended)
 
-1. Create a `.env` file with your credentials:
+1. Create mount points with proper permissions:
+```bash
+sudo mkdir -p s3data
+sudo chown 1000:1000 s3data  # Match container's s3fs user
+```
+
+2. Create a `.env` file with your credentials:
 ```bash
 AWS_ACCESS_KEY_ID=your_access_key
 AWS_SECRET_ACCESS_KEY=your_secret_key
 S3_BUCKET=your_bucket_name
 ```
 
-2. Create a docker-compose.yml file:
+3. Create a docker-compose.yml file:
 ```yaml
 version: '3'
 
@@ -36,18 +44,19 @@ services:
     image: amizzo/dockfuse:latest
     container_name: dockfuse
     privileged: true
+    user: "1000:1000"  # Run as non-root user
     env_file: .env
     volumes:
-      - s3data:/mnt/s3bucket
+      - type: bind
+        source: ${PWD}/s3data
+        target: /mnt/s3bucket
+        bind:
+          propagation: rshared
     restart: unless-stopped
     command: daemon
-
-volumes:
-  s3data:
-    driver: local
 ```
 
-3. Start the container:
+4. Start the container:
 ```bash
 docker-compose up -d
 ```
@@ -55,13 +64,39 @@ docker-compose up -d
 ### Using docker run
 
 ```bash
+# Create mount point
+sudo mkdir -p s3data
+sudo chown 1000:1000 s3data
+
+# Run container
 docker run -d --name dockfuse \
   --privileged \
+  --user 1000:1000 \
   -e AWS_ACCESS_KEY_ID=your_access_key \
   -e AWS_SECRET_ACCESS_KEY=your_secret_key \
   -e S3_BUCKET=your_bucket_name \
+  -v ${PWD}/s3data:/mnt/s3bucket:rshared \
   amizzo/dockfuse:latest
 ```
+
+## Security Features
+
+DockFuse includes several security enhancements:
+
+1. **Non-root Operation**
+   - Runs as a non-root user (UID 1000) by default
+   - All mount points and cache directories are properly permissioned
+   - AWS credentials are stored securely in the user's home directory
+
+2. **Process Management**
+   - Uses `tini` as init system for proper signal handling
+   - Automatic cleanup of mounts on container shutdown
+   - Proper handling of SIGTERM and other signals
+
+3. **Mount Reliability**
+   - Automatic retry logic for failed mounts
+   - Proper error handling and reporting
+   - Health checks to verify mount status
 
 ## Basic Configuration Options
 
