@@ -1,6 +1,5 @@
 # DockFuse
 
-[![Build and Push Docker Image](https://github.com/amizzo/dockfuse/actions/workflows/docker-build.yml/badge.svg)](https://github.com/amizzo/dockfuse/actions/workflows/docker-build.yml)
 [![Docker Hub](https://img.shields.io/docker/pulls/amizzo/dockfuse.svg)](https://hub.docker.com/r/amizzo/dockfuse)
 
 DockFuse is a Docker-based solution for mounting S3 buckets as local volumes using s3fs-fuse.
@@ -232,6 +231,57 @@ To include a write test in the health check (more comprehensive but more intensi
 environment:
   - HEALTH_CHECK_WRITE_TEST=1
 ```
+
+#### Health Check in docker-compose.yml
+
+Here's a more complete example of configuring health checks in your docker-compose.yml:
+
+```yaml
+version: '3'
+
+services:
+  dockfuse:
+    image: amizzo/dockfuse:latest
+    container_name: dockfuse
+    privileged: true
+    environment:
+      - AWS_ACCESS_KEY_ID=your_access_key
+      - AWS_SECRET_ACCESS_KEY=your_secret_key
+      - S3_BUCKET=your_bucket_name
+      # Health check configuration
+      - HEALTH_CHECK_TIMEOUT=10             # Increase timeout to 10 seconds
+      - HEALTH_CHECK_WRITE_TEST=1           # Enable write testing
+    volumes:
+      - s3data:/mnt/s3bucket
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      interval: 1m                          # Check every minute
+      timeout: 15s                          # Allow 15 seconds for the check
+      retries: 3                            # Retry 3 times before marking unhealthy
+      start_period: 30s                     # Give 30s for container to start
+    restart: unless-stopped
+    command: daemon
+  
+  # Example of a service that depends on the S3 mount being healthy
+  dependent-service:
+    image: your-application-image
+    depends_on:
+      dockfuse:
+        condition: service_healthy          # Wait for healthy status before starting
+    volumes:
+      - s3data:/data:ro                     # Mount the same volume as read-only
+    # Additional configuration...
+
+volumes:
+  s3data:
+    driver: local
+```
+
+This configuration:
+1. Configures container-level health check parameters
+2. Increases the timeout for health checks to accommodate slower S3 connections
+3. Enables write testing for more comprehensive checks
+4. Ensures dependent services only start after the S3 mount is confirmed working
 
 ### Testing the Container
 

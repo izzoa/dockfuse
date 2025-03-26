@@ -2,7 +2,7 @@
 
 Docker container for mounting S3 buckets as local volumes using s3fs-fuse.
 
-**GitHub Repository:** [https://github.com/amizzo/dockfuse](https://github.com/amizzo/dockfuse)
+**GitHub Repository:** [https://github.com/izzoa/dockfuse](https://github.com/izzoa/dockfuse)
 
 ## Features
 
@@ -88,6 +88,55 @@ Or by bypassing the entrypoint script:
 docker run --rm --entrypoint="" amizzo/dockfuse:latest echo "Container works!"
 ```
 
+## Health Check Configuration
+
+DockFuse includes built-in health checking to monitor the S3 mount status. Here's how to use it:
+
+### Health Check with Docker Compose
+
+```yaml
+version: '3'
+
+services:
+  dockfuse:
+    image: amizzo/dockfuse:latest
+    container_name: dockfuse
+    privileged: true
+    environment:
+      - AWS_ACCESS_KEY_ID=your_access_key
+      - AWS_SECRET_ACCESS_KEY=your_secret_key
+      - S3_BUCKET=your_bucket_name
+      # Health check configuration
+      - HEALTH_CHECK_TIMEOUT=10        # Timeout in seconds (default: 5)
+      - HEALTH_CHECK_WRITE_TEST=1      # Enable write test (default: 0)
+    volumes:
+      - s3data:/mnt/s3bucket
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      interval: 1m
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  s3data:
+    driver: local
+```
+
+### Monitoring Health Status
+
+Check the health status of your container:
+
+```bash
+docker inspect --format='{{.State.Health.Status}}' dockfuse
+```
+
+The health check verifies that:
+1. The S3 bucket is mounted correctly
+2. Directory contents can be listed
+3. (Optional) Files can be written and read when `HEALTH_CHECK_WRITE_TEST=1`
+
 ## Advanced Usage
 
-For advanced configuration options, example configurations, and more information, visit the [GitHub repository](https://github.com/amizzo/dockfuse). 
+For advanced configuration options, example configurations, and more information, visit the [GitHub repository](https://github.com/izzoa/dockfuse). 
